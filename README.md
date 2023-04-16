@@ -1,8 +1,8 @@
 # TemperaturSteuerung_HeizungsPumpe_SeminarRaum_2023_v1
 
-# TemperaturSteuerung_HeizungsPumpe_SeminarRaum_2023_v1
+### TemperaturSteuerung_HeizungsPumpe_SeminarRaum_2023_v1
 
-## PlatformIO project
+#### PlatformIO project
 
 - Arduino Pro Mini 5V 16MHz 328P
 - controls 5V High-State Relay-Module to switch heater pump on&off
