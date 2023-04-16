@@ -29,7 +29,7 @@
 #define TEMP_MAX 18.5      // 18.5
 #define TEMP_HYSTERESE 0.1 // 18.6 17.9
 // we repeat 1s sleep idle just x times to get sleep like below
-#define SLEEP_FOR_SECONDS   20
+#define SLEEP_FOR_SECONDS 20
 
 // control vars maybe use next two in a dynamic tempreading scenario,thendefines are not useful
 // volatile float tempMin = 26.5;
@@ -102,7 +102,7 @@ void loop(void)
     digitalWrite(LED_BUILTIN, LOW);
   }
   ///************************************
- ///************************************
+  ///************************************
 
   ///************************************
   // TEMPERATURE CONTROL STUFF
@@ -184,7 +184,7 @@ void loop(void)
     delay(SHORT_TIME * .5); // FOR DEBUG ONLY
     // sleepNow();                  // TODO: make sleep stuff
     // this lowpower idles for 8sec, presumably using watchdog, cuz it max 8sec only..:(
-      // but we run it SLEEP_FOR_SECONDS times, to get what i want.. 1x20 + delayoverhead == 22
+    // but we run it SLEEP_FOR_SECONDS times, to get what i want.. 1x20 + delayoverhead == 22
     for (int index = 0; index < SLEEP_FOR_SECONDS; index++)
     {
       LowPower.idle(SLEEP_1S, ADC_OFF, TIMER2_OFF, TIMER1_OFF, TIMER0_OFF, SPI_OFF, USART0_OFF, TWI_OFF);
