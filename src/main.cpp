@@ -157,7 +157,6 @@ void loop(void)
   {
     digitalWrite(RELAY_TOGGLE_PIN, HIGH); // ON
     // Serial.println("RELAY_TOGGLE_PIN HIGH"); // ONLY FOR DEBUG DEV
-    digitalWrite(LED_BUILTIN, HIGH);
   }
   else
   {
