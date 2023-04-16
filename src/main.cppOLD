@@ -1,0 +1,318 @@
+// ***************************************************************************
+// TemperaturSteuerung HeizungsPumpe Seminarraum 2023 - v1
+// - by Philipp Rauch - VigilanteSystems - opensource - 23.03.2023
+// ***************************************************************************
+// its to check for tempMin and tempMax to toggle relay on pumpswitch
+// ***************************************************************************
+
+// tempCtrl_heatpump_2023_v1
+
+// **** INCLUDES *****
+#include <Arduino.h>
+// Include the libraries we need
+// #include <avr/wdt.h>
+// #include <avr/sleep.h>
+// #include <avr/power.h>
+// #include <TimerOne.h>
+// OneWire stuff
+#include <OneWire.h>
+#include <DallasTemperature.h>
+
+// #include <dht.h>
+#include <LowPower.h>
+
+// Data wire is plugged into pin 2 on the Arduino
+#define ONE_WIRE_BUS 2
+// state toggle pins
+#define MANUAL_MODE_PIN 3
+#define RELAY_TOGGLE_PIN 6
+// value defines, maybe put seperately and include that file
+#define TEMP_CHECK_COUNT 5
+#define SHORT_TIME 800
+#define LONG_TIME 1800
+// temp controls
+#define TEMP_MIN 26 // 16
+#define TEMP_MAX 27 // 18
+
+// control vars maybe use next two in a dynamic tempreading scenario,thendefines are not useful
+// volatile float tempMin = 26.5;
+// volatile float tempMax = 27.5;
+volatile float tempCurrent = 0.0;
+// is manual Mode is switched on
+volatile bool manualMode = false;
+volatile bool relayStateON = false;
+// static unsigned long Timer1Timer = SHORT_TIME;
+
+// Setup a oneWire instance to communicate with any OneWire devices (not just Maxim/Dallas temperature ICs)
+OneWire oneWire(ONE_WIRE_BUS);
+// Pass our oneWire reference to Dallas Temperature.
+DallasTemperature sensors(&oneWire);
+
+float averageFloatArray(float *array, int len) // assuming array is int.
+{
+  long sum = 0L; // sum will be larger than an item, long for safety.
+  for (int i = 0; i < len; i++)
+    sum += array[i];
+  return ((float)sum) / len; // average will be fractional, so float may be appropriate.
+}
+/////////////////
+// ISR ISR ISR //
+void onManualMode_1_Interrupt()
+{
+  /* The Arduino calls this function when
+     it detects a rising edge on pin 2. */
+  manualMode = true;
+  detachInterrupt(digitalPinToInterrupt(MANUAL_MODE_PIN)); // external interrupt disable (INT0)
+  Timer1.detachInterrupt();
+}
+void onTimer_1_Interrupt()
+{
+  /* The Arduino calls this function when
+      Timer1.initialize(Timer1Time); has run out
+ */
+  // manualMode = false;
+  detachInterrupt(digitalPinToInterrupt(MANUAL_MODE_PIN)); // external interrupt disable (INT0)
+  Timer1.detachInterrupt();
+}
+void goToSleep()
+{
+  // set removed interrupts back on..
+  // Timer1.initialize(1000);
+  // Timer1.attachInterrupt(onTimer_1_Interrupt); // run that ISR
+  attachInterrupt(digitalPinToInterrupt(MANUAL_MODE_PIN), onManualMode_1_Interrupt, RISING);
+
+  // clear various "reset" flags
+  MCUSR = 0;
+  // // allow changes, disable reset
+  WDTCSR = bit(WDCE) | bit(WDE);
+  // set interrupt mode and an interval
+  WDTCSR = bit(WDIE) | bit(WDP3) | bit(WDP0); // set WDIE, and 8 second delay
+  wdt_reset();                                // pat the dog
+
+  // setup sleep mode and run it..
+  set_sleep_mode(SLEEP_MODE_STANDBY);
+  noInterrupts(); // timed sequence follows
+  sleep_enable();
+  // power_timer1_enable(); // Timer 1
+  // extra power saving settings
+  // turn off brown-out enable in software
+  MCUCR = bit(BODS) | bit(BODSE); // turn on brown-out enable select
+  MCUCR = bit(BODS);              // this must be done within 4 clock cycles of above
+
+  interrupts();    // guarantees next instruction executed
+  sleep_cpu();     // nighty-night!
+  sleep_disable(); // awake again -- cancel sleep as a precaution
+
+  // EICRA = 0x00; // configure INT0 to trigger on low level
+  // wdt_reset();
+  // // choose power down mode
+  // sleep_enable(); // sets the SE (sleep enable) bit
+  // set_sleep_mode(SLEEP_MODE_PWR_DOWN);
+  // //  set_sleep_mode(SLEEP_MODE_PWR_SAVE); // choose power save mode
+  // //  set_sleep_mode(SLEEP_MODE_STANDBY); // choose external standby power mode
+  // //  set_sleep_mode(SLEEP_MODE_EXT_STANDBY); // choose external standby power mode
+  // //  set_sleep_mode(SLEEP_MODE_IDLE); // did not work like this!
+  // //  set_sleep_mode(SLEEP_MODE_ADC); // choose ADC noise reduction mode
+  // //  sleep_bod_disable();  // optional brown-out detection switch off
+  // adcsra = ADCSRA;                         // save the ADC Control and Status Register A
+  // ADCSRA = 0;                              // disable ADC
+  // cli();                                   // deactivate interrupts
+  // EIMSK |= _BV(INT0);                      // enable INT0
+  // mcucr1 = MCUCR | _BV(BODS) | _BV(BODSE); // turn off the brown-out detector
+  // mcucr2 = mcucr1 & ~_BV(BODSE);
+  // MCUCR = mcucr1;
+  // MCUCR = mcucr2;
+  // sei();           //
+  // sleep_cpu();     // sleep now!!
+  // sleep_disable(); // deletes the SE bit
+  // ADCSRA = adcsra; // restore ADCSRA
+}
+void wakeUpNow() // here the interrupt is handled after wakeup
+{
+  // execute code here after wake-up before returning to the loop() function
+  // timers and code using timers (serial.print and more...) will not work here.
+  // we don't really need to execute any special functions here, since we
+  // just want the thing to wake up
+}
+void sleepNow() // here we put the arduino to sleep
+{
+  delay(1000);
+  /* Now is the time to set the sleep mode. In the Atmega8 datasheet
+   * http://www.atmel.com/dyn/resources/prod_documents/doc2486.pdf on page 35
+   * there is a list of sleep modes which explains which clocks and
+   * wake up sources are available in which sleep mode.
+   *
+   * In the avr/sleep.h file, the call names of these sleep modes are to be found:
+   *
+   * The 5 different modes are:
+   *     SLEEP_MODE_IDLE         -the least power savings
+   *     SLEEP_MODE_ADC
+   *     SLEEP_MODE_PWR_SAVE
+   *     SLEEP_MODE_STANDBY
+   *     SLEEP_MODE_PWR_DOWN     -the most power savings
+   *
+   * For now, we want as much power savings as possible, so we
+   * choose the according
+   * sleep mode: SLEEP_MODE_PWR_DOWN
+   *
+   */
+  set_sleep_mode(SLEEP_MODE_PWR_SAVE); // sleep mode is set here
+
+  sleep_enable(); // enables the sleep bit in the mcucr register
+                  // so sleep is possible. just a safety pin
+
+  /* Now it is time to enable an interrupt. We do it here so an
+   * accidentally pushed interrupt button doesn't interrupt
+   * our running program. if you want to be able to run
+   * interrupt code besides the sleep function, place it in
+   * setup() for example.
+   *
+   * In the function call attachInterrupt(A, B, C)
+   * A   can be either 0 or 1 for interrupts on pin 2 or 3.
+   *
+   * B   Name of a function you want to execute at interrupt for A.
+   *
+   * C   Trigger mode of the interrupt pin. can be:
+   *             LOW        a low level triggers
+   *             CHANGE     a change in level triggers
+   *             RISING     a rising edge of a level triggers
+   *             FALLING    a falling edge of a level triggers
+   *
+   * In all but the IDLE sleep modes only LOW can be used.
+   */
+
+  // set removed interrupts back on..
+  Timer1.initialize(1000);
+  Timer1.attachInterrupt(onTimer_1_Interrupt); // run that ISR
+  // attachInterrupt(0,wakeUpNow, LOW); // use interrupt 0 (pin 2) and run function
+  // wakeUpNow when pin 2 gets LOW
+  attachInterrupt(digitalPinToInterrupt(MANUAL_MODE_PIN), onManualMode_1_Interrupt, RISING);
+
+  sleep_mode(); // here the device is actually put to sleep!!
+                // THE PROGRAM CONTINUES FROM HERE AFTER WAKING UP
+
+  sleep_disable(); // first thing after waking from sleep:
+                   // disable sleep...
+  // detachInterrupt(0);                                      // disables interrupt 0 on pin 2 so the
+  // wakeUpNow code will not be executed
+  // during normal running time.
+  detachInterrupt(digitalPinToInterrupt(MANUAL_MODE_PIN)); // external interrupt disable (INT0)
+  Timer1.detachInterrupt();
+}
+//////////////////////////////////////////////////
+
+void setup(void)
+{
+  // switchOFF inbuild LED
+  pinMode(LED_BUILTIN, OUTPUT);
+  digitalWrite(LED_BUILTIN, LOW);
+  // set control pins
+  // pinMode(ONE_WIRE_BUS, INPUT_PULLUP);
+  pinMode(MANUAL_MODE_PIN, INPUT);
+  pinMode(RELAY_TOGGLE_PIN, OUTPUT);
+
+  // Start up the library
+  sensors.begin(); // IC Default 9 bit. If you have troubles consider upping it 12. Ups the delay giving the IC more time to process the temperature measurement
+
+  // start serial port
+  Serial.begin(9600);
+  Serial.println("Dallas Temperature IC Control Library Demo");
+}
+
+void loop(void)
+{
+  // // call sensors.requestTemperatures() to issue a global temperature
+  // // request to all devices on the bus
+  // Serial.print("Requesting temperatures... ");
+  // sensors.requestTemperatures(); // Send the command to get temperatures
+  // Serial.println("DONE");
+
+  // Serial.print("Temperature for Device 1 is: ");
+  // Serial.println(sensors.getTempCByIndex(0)); // Why "byIndex"? You can have more than one IC on the same bus. 0 refers to the first IC on the wire
+
+  // check again if manual mode switch is switched ON
+  if (digitalRead(MANUAL_MODE_PIN))
+  {
+    Serial.println("MANUAL MODE ON"); // ONLY FOR DEBUG DEV
+    manualMode = true;
+  }
+  else
+  {
+    // Serial.println("MANUAL MODE OFF"); // ONLY FOR DEBUG DEV
+    manualMode = false;
+  }
+
+  // read Temperatur and control relay ONLY when NOT in manual mode
+  // (i.e. manual mode switch, switched on - relayStateON==TRUE)
+  if (not manualMode)
+  {
+    // construction of a software timer for 800 ms // TODO make it longer lateron..
+    static unsigned long tmr;
+    if (millis() - tmr >= SHORT_TIME)
+    {
+      // get last used timer time
+      tmr = millis();
+      // always a fresh floatStoreArray for each round
+      float tempCheckStore[TEMP_CHECK_COUNT] = {};
+      // read sensor X times and take mean for more precise value
+      for (int index = 0; index < TEMP_CHECK_COUNT; index++)
+      {
+        // read sensor1
+        sensors.requestTemperatures(); // Send the command to get temperatures
+        tempCurrent = sensors.getTempCByIndex(0);
+        tempCheckStore[index] = tempCurrent;
+        // DEBUG
+        Serial.println(tempCurrent);
+
+        delay(500);
+      }
+      // take means of just read temperatures
+      tempCurrent = averageFloatArray(tempCheckStore, TEMP_CHECK_COUNT);
+
+      // DEBUG
+      Serial.print("tempCurrent: "); // ONLY FOR DEBUG DEV
+      Serial.println(tempCurrent);   // ONLY FOR DEBUG DEV
+    }
+
+    // var to switch relay to pump ON
+    if (tempCurrent <= TEMP_MIN)
+    {
+      relayStateON = true;
+    }
+    // var to switch relay to pump OFF
+    if (tempCurrent >= TEMP_MAX)
+    {
+      relayStateON = false;
+    }
+  }
+  else
+  {
+    relayStateON = true;
+  }
+
+  // switch relay to pump ON/OFF
+  if (relayStateON)
+  {
+    digitalWrite(RELAY_TOGGLE_PIN, HIGH);    // ON
+    Serial.println("RELAY_TOGGLE_PIN HIGH"); // ONLY FOR DEBUG DEV
+  }
+  else
+  {
+    digitalWrite(RELAY_TOGGLE_PIN, LOW);    // OFF
+    Serial.println("RELAY_TOGGLE_PIN LOW"); // ONLY FOR DEBUG DEV
+  }
+
+  if (not manualMode)
+  {
+    Serial.println("GOTOSLEEP"); // ONLY FOR DEBUG DEV
+    digitalWrite(LED_BUILTIN, LOW);
+    delay(1000); // FOR DEBUG ONLY
+    // sleepNow();                  // TODO: make sleep stuff
+    LowPower.idle(SLEEP_8S, ADC_ON, TIMER2_OFF, TIMER1_OFF, TIMER0_OFF, SPI_OFF, USART0_OFF, TWI_OFF);
+
+    Serial.println("WAKEUP"); // ONLY FOR DEBUG DEV
+  }
+  delay(1000); // FOR DEBUG ONLY
+}
+
+// // FIN

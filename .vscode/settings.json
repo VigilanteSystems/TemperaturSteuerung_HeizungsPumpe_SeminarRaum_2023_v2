@@ -1,0 +1,6 @@
+{
+    "cmake.sourceDirectory": "${workspaceFolder}/.pio/libdeps/pro16MHzatmega168/OneWireNg",
+    "files.associations": {
+        "*.cppold": "cpp"
+    }
+}

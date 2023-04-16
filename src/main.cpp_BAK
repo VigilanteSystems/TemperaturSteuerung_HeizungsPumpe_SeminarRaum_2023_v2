@@ -1,0 +1,249 @@
+// ***************************************************************************
+// TemperaturSteuerung HeizungsPumpe Seminarraum 2023 - v1
+// - by Philipp Rauch - VigilanteSystems - opensource - 23.03.2023
+// ***************************************************************************
+// its to check for tempMin and tempMax to toggle relay on pumpswitch
+// ***************************************************************************
+
+// tempCtrl_heatpump_2023_v1
+
+// **** INCLUDES *****
+#include <Arduino.h>
+// #include <avr/wdt.h>
+#include <avr/sleep.h>
+#include <microDS18B20.h>
+#include <TimerOne.h>
+
+// state toggle pins
+const int tempSensor1Pin = 2;
+const int manualModePin = 3; // its an interrupt pin
+const int relayTogglPin = 6;
+// sensor on D2
+MicroDS18B20<tempSensor1Pin> sensor1;
+// MicroDS18B20<tempSensorPinxxx> sensor2;
+// control vars
+volatile float tempMin = 15.0;
+volatile float tempMax = 20.0;
+volatile float tempCurrent = 17.5;
+// is manual Mode is switched on
+volatile bool manualMode = false;
+volatile bool relayStateON = false;
+
+static unsigned long shortTime = 1600;   // millis
+static unsigned long longTime = 1800000; // minuten 30minx60sec=1800sec x 1000millis = 1800000 millis
+static unsigned long Timer1Timer = shortTime;
+// temp reading
+const int tempCheckCount = 3;
+
+// byte intCounter, adcsra, mcucr1, mcucr2;
+
+float averageFloatArray(float *array, int len) // assuming array is int.
+{
+  long sum = 0L; // sum will be larger than an item, long for safety.
+  for (int i = 0; i < len; i++)
+    sum += array[i];
+  return ((float)sum) / len; // average will be fractional, so float may be appropriate.
+}
+
+/////////////////
+// ISR ISR ISR //
+void onManualMode_1_Interrupt()
+{
+  /* The Arduino calls this function when
+     it detects a rising edge on pin 2. */
+  manualMode = true;
+  detachInterrupt(digitalPinToInterrupt(manualModePin)); // external interrupt disable (INT0)
+  Timer1.detachInterrupt();
+}
+void onTimer_1_Interrupt()
+{
+  /* The Arduino calls this function when
+      Timer1.initialize(Timer1Time); has run out
+ */
+  manualMode = false;
+  detachInterrupt(digitalPinToInterrupt(manualModePin)); // external interrupt disable (INT0)
+  Timer1.detachInterrupt();
+}
+void goToSleep()
+{
+  // set removed interrupts back on..
+  Timer1.initialize(Timer1Timer);
+  Timer1.attachInterrupt(onTimer_1_Interrupt); // run that ISR
+  attachInterrupt(digitalPinToInterrupt(manualModePin), onManualMode_1_Interrupt, RISING);
+  // setup sleep mode and run it..
+  set_sleep_mode(SLEEP_MODE_PWR_DOWN);
+  noInterrupts(); // timed sequence follows
+  sleep_enable();
+  interrupts();    // guarantees next instruction executed
+  sleep_cpu();     // nighty-night!
+  sleep_disable(); // awake again -- cancel sleep as a precaution
+
+  // EICRA = 0x00; // configure INT0 to trigger on low level
+  // wdt_reset();
+  // // choose power down mode
+  // sleep_enable(); // sets the SE (sleep enable) bit
+  // set_sleep_mode(SLEEP_MODE_PWR_DOWN);
+  // //  set_sleep_mode(SLEEP_MODE_PWR_SAVE); // choose power save mode
+  // //  set_sleep_mode(SLEEP_MODE_STANDBY); // choose external standby power mode
+  // //  set_sleep_mode(SLEEP_MODE_EXT_STANDBY); // choose external standby power mode
+  // //  set_sleep_mode(SLEEP_MODE_IDLE); // did not work like this!
+  // //  set_sleep_mode(SLEEP_MODE_ADC); // choose ADC noise reduction mode
+  // //  sleep_bod_disable();  // optional brown-out detection switch off
+  // adcsra = ADCSRA;                         // save the ADC Control and Status Register A
+  // ADCSRA = 0;                              // disable ADC
+  // cli();                                   // deactivate interrupts
+  // EIMSK |= _BV(INT0);                      // enable INT0
+  // mcucr1 = MCUCR | _BV(BODS) | _BV(BODSE); // turn off the brown-out detector
+  // mcucr2 = mcucr1 & ~_BV(BODSE);
+  // MCUCR = mcucr1;
+  // MCUCR = mcucr2;
+  // sei();           //
+  // sleep_cpu();     // sleep now!!
+  // sleep_disable(); // deletes the SE bit
+  // ADCSRA = adcsra; // restore ADCSRA
+}
+
+//////////////////////////////////////////////////
+
+// put your setup code here, to run once:
+void setup()
+{
+  // switchOFF inbuild LED
+  pinMode(LED_BUILTIN, OUTPUT);
+  digitalWrite(LED_BUILTIN, LOW);
+  // set control pins
+  pinMode(tempSensor1Pin, INPUT);
+  pinMode(manualModePin, INPUT);
+  pinMode(relayTogglPin, OUTPUT);
+
+  // // sleep mod stuff
+  // timer interrupt
+  // Timer1.initialize(Timer1Timer);
+  // Timer1.attachInterrupt(onTimer_1_Interrupt); // run that ISR
+  // RISING due to Hardware-Switch, not a Button
+  // attachInterrupt(digitalPinToInterrupt(manualModePin3), onManualMode_1_Interrupt, RISING);
+
+  // NEEDED FOR DEBUG ONLY
+  Serial.begin(9600);
+}
+
+void loop()
+{
+  // request a new value
+  sensor1.requestTemp();
+  
+    // read last value
+  if (sensor1.readTemp())
+  {
+    // read sensor1
+    tempCurrent = sensor1.getTemp();
+    // tempCheckStore[index] = tempCurrent;
+    // DEBUG
+    Serial.println(tempCurrent);
+  }
+  else
+    Serial.println("sensor1 error"); // ONLY FOR DEBUG DEV
+
+  // request a new value
+  sensor1.requestTemp();
+
+  // take means of just read temperatures
+  // tempCurrent = averageFloatArray(tempCheckStore, tempCheckCount);
+
+  // DEBUG
+  Serial.print("tempCurrent: "); // ONLY FOR DEBUG DEV
+  Serial.println(tempCurrent);   // ONLY FOR DEBUG DEV
+  delay(2000);                   // for DEBUG ONLY
+}
+
+// put your main code here, to run repeatedly:
+void loop()
+{
+  // switch Interrupts OFF, to do stuff undisturbed
+  noInterrupts();
+
+  // check again if manual mode switch is switched ON
+  if (digitalRead(manualModePin3) == HIGH)
+    manualMode = true;
+  else
+    manualMode = false;
+
+  // read Temperatur and control relay ONLY when NOT in manual mode
+  // (i.e. manual mode switch, switched on - relayStateON==TRUE)
+  if (not manualMode)
+  {
+    // construction of a software timer for 800 ms // TODO make it longer lateron..
+    static unsigned long tmr;
+    if (millis() - tmr >= shortTime)
+    {
+      // get last used timer time
+      tmr = millis();
+      // always a fresh floatStoreArray for each round
+      float tempCheckStore[tempCheckCount] = {};
+      // read sensor X times and take mean for more precise value
+      for (int index = 0; index <= tempCheckCount; index++)
+      {
+        // read last value
+        if (sensor1.readTemp())
+        {
+          // read sensor1
+          tempCurrent = sensor1.getTemp();
+          tempCheckStore[index] = tempCurrent;
+          // DEBUG
+          Serial.println(tempCurrent);
+        }
+        else
+          Serial.println("sensor1 error"); // ONLY FOR DEBUG DEV
+
+        // request a new value
+        sensor1.requestTemp();
+      }
+      // take means of just read temperatures
+      tempCurrent = averageFloatArray(tempCheckStore, tempCheckCount);
+
+      // DEBUG
+      Serial.print("tempCurrent: "); // ONLY FOR DEBUG DEV
+      Serial.println(tempCurrent);   // ONLY FOR DEBUG DEV
+    }
+
+    // var to switch relay to pump ON
+    if (tempCurrent < tempMin)
+    {
+      relayStateON = true;
+    }
+    // var to switch relay to pump OFF
+    if (tempCurrent >= tempMax)
+    {
+      relayStateON = false;
+    }
+  }
+  else
+  {
+    relayStateON = true;
+  }
+
+  // switch relay to pump ON/OFF
+  if (relayStateON)
+  {
+    digitalWrite(relayTogglPin4, HIGH); // ON
+    digitalWrite(LED_BUILTIN, HIGH);    // DEBUG
+    Serial.println("LED_BUILTIN HIGH"); // ONLY FOR DEBUG DEV
+    delay(4000);
+  }
+  else
+  {
+    digitalWrite(relayTogglPin4, LOW); // OFF
+    digitalWrite(LED_BUILTIN, LOW);    // DEBUG
+    Serial.println("LED_BUILTIN LOW"); // ONLY FOR DEBUG DEV
+  }
+
+  // switch Interrupts back ON
+  interrupts();
+
+  // go into sleep till switch triggered OR longTime is up
+  // if not manual mode switched ON
+  delay(2000); // for DEBUG ONLY
+  // if (not manualMode)
+    // goToSleep(); // commented out for DEBUG
+}
+// FIN
