@@ -15,3 +15,6 @@ PlatformIO project
 Have Fun and regards
 Vigilante -
 VigilanteSystems - April 2023
+
+PS:
+schematics or so are upcoming, still live-testing, looks good so far..
