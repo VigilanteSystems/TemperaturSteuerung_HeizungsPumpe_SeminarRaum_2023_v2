@@ -10,7 +10,12 @@ PlatformIO project
 - plugin system to put between powerleads of pumpcircuit, self-powered via 5V USB wallwart plug
 - set to 18 degree Celcius temps to switch on below 17.9 and switch off over 18.6, 
 - manual mode to override and run heaters on full..
-
+- using LowPower.idle modes as iteration to enable >8s idle times.. its currently set to 20sec idle
+--#define TEMP_MIN 18        // 18.0
+--#define TEMP_MAX 18.5      // 18.5
+--#define TEMP_HYSTERESE 0.1 // 18.6 17.9
+--// we repeat 1s sleep idle for SLEEP_FOR_SECONDS times to get sleeptime 20sec
+--#define SLEEP_FOR_SECONDS   20
 
 Have Fun and regards
 Vigilante -
