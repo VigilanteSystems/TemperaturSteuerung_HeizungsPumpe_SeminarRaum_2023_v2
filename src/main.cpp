@@ -31,7 +31,6 @@ const float TEMP_MAX_C = 18.5;
 const float TEMP_HYSTERESIS_C = 0.1;
 // sleep mode
 const int SLEEP_DURATION_S = 20;
-bool relayStateON = false;
 static unsigned long startTime = millis(); // Define and initialize startTime variable
 
 enum RelayState
@@ -52,7 +51,7 @@ void setPinModes()
   pinMode(RELAY_TOGGLE_PIN, OUTPUT);
 }
 
-void handleRelayState(float tempCurrent, long startTime)
+void handleRelayState(float tempCurrent, unsigned long startTime)
 {
   switch (relayState)
   {
@@ -135,9 +134,13 @@ void waitShortTime()
   delay(SHORT_TIME_MS);
 }
 
-void goToSleep()
+void goToSleep(int sleepDuration)
 {
-  LowPower.powerDown(SLEEP_8S, ADC_OFF, BOD_OFF);
+  for (int i=0; i<sleepDuration; i++)
+  {
+    LowPower.idle(SLEEP_1S, ADC_OFF, TIMER2_OFF, TIMER1_OFF, TIMER0_OFF, SPI_OFF, USART0_OFF, TWI_OFF);
+  }
+  // LowPower.powerDown(SLEEP_8S, ADC_OFF, BOD_OFF);
 }
 
 void setup()
@@ -147,7 +150,6 @@ void setup()
 
 void loop()
 {
-
   // Check for manual mode switch on
   checkManualModeSwitch();
 
@@ -160,15 +162,15 @@ void loop()
   }
   else
   {
-    relayStateON = true;
+    relayState = RELAY_ON;
   }
 
   // Relay control stuff
   toggleRelay();
 
   // Go to sleep/idle if not in manual mode and the relay is off
-  if (!manualMode && !relayStateON)
+  if (!digitalRead(MANUAL_MODE_PIN))
   {
-    goToSleep();
+    goToSleep(SLEEP_DURATION_S);
   }
 }
