@@ -2,6 +2,7 @@
 // TemperaturSteuerung HeizungsPumpe Seminarraum 2023 - v2
 // - by Philipp Rauch - VigilanteSystems - opensource - 23.03.2023
 // ***************************************************************************
+
 // This code controls a heating pump based on temperature readings from a
 // DallasTemperature sensor. The pump is turned on when the temperature is
 // below TEMP_MIN_C and turned off when it is above TEMP_MAX_C. A hysteresis
