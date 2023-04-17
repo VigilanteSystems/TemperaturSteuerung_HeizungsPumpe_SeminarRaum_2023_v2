@@ -1,102 +1,116 @@
 // ***************************************************************************
-// TemperaturSteuerung HeizungsPumpe Seminarraum 2023 - v1
+// TemperaturSteuerung HeizungsPumpe Seminarraum 2023 - v2
 // - by Philipp Rauch - VigilanteSystems - opensource - 23.03.2023
 // ***************************************************************************
-// its to check for tempMin and tempMax to toggle relay on pumpswitch
-// ***************************************************************************
+// This code controls a heating pump based on temperature readings from a
+// DallasTemperature sensor. The pump is turned on when the temperature is
+// below TEMP_MIN_C and turned off when it is above TEMP_MAX_C. A hysteresis
+// of TEMP_HYSTERESIS_C is used to avoid frequent toggling of the pump.
+// The code also supports a manual mode where the pump is always on.
+// The code is optimized for low power consumption by using the LowPower
+// library to put the device to sleep when the pump is off and there is no
+// user input.
 
-// tempCtrl_heatpump_2023_v1
-
-// **** INCLUDES *****
 #include <Arduino.h>
-// Include the libraries we need
 #include <LowPower.h>
-// OneWire stuff
 #include <OneWire.h>
 #include <DallasTemperature.h>
-#include <digitalWriteFast.h>
 
 // Data wire is plugged into pin 2 on the Arduino
 const int ONE_WIRE_BUS = 2;
 // state toggle pins
 const int MANUAL_MODE_PIN = 3;
 const int RELAY_TOGGLE_PIN = 6;
-// value defines, maybe put seperately and include that file
+// value defines
 const int TEMP_CHECK_COUNT = 3;
-const int SHORT_TIME = 1200;
-const int LONG_TIME = (SHORT_TIME * TEMP_CHECK_COUNT);
+const int SHORT_TIME_MS = 1200;
+const int LONG_TIME_MS = (SHORT_TIME_MS * TEMP_CHECK_COUNT);
 // temp controls
-const float TEMP_MIN = 18;        // 18.0
-const float TEMP_MAX = 18.5;      // 18.5
-const float TEMP_HYSTERESE = 0.1; // 18.6 17.9
-// we repeat 1s sleep idle just x times to get sleep like below
-const int SLEEP_FOR_SECONDS = 20;
-volatile float tempCurrent = 0.0;
-
-// is manual Mode is switched on
-volatile bool manualMode = false;
-volatile bool relayStateON = false;
-volatile bool relayStateLAST = relayStateON;
-unsigned long startTime = millis();
-
-// Setup a oneWire instance to communicate with any OneWire devices (not just Maxim/Dallas temperature ICs)
-OneWire oneWire(ONE_WIRE_BUS);
-// Pass our oneWire reference to Dallas Temperature.
-DallasTemperature sensors(&oneWire);
+const float TEMP_MIN_C = 18.0;
+const float TEMP_MAX_C = 18.5;
+const float TEMP_HYSTERESIS_C = 0.1;
+// sleep mode
+const int SLEEP_DURATION_S = 20;
+bool relayStateON = false;
+static unsigned long startTime = millis(); // Define and initialize startTime variable
 
 enum RelayState
 {
   RELAY_OFF,
-  RELAY_ON
+  RELAY_ON,
+  RELAY_DELAY_OFF,
+  RELAY_DELAY_ON
 };
 
 RelayState relayState = RELAY_OFF;
+bool manualMode = false;
 
-void handleRelayState(float tempCurrent)
+void setPinModes()
+{
+  pinMode(LED_BUILTIN, OUTPUT);
+  pinMode(MANUAL_MODE_PIN, INPUT_PULLUP);
+  pinMode(RELAY_TOGGLE_PIN, OUTPUT);
+}
+
+void handleRelayState(float tempCurrent, long startTime)
 {
   switch (relayState)
   {
   case RELAY_OFF:
-    if (tempCurrent < TEMP_MIN)
+    if (tempCurrent < TEMP_MIN_C - TEMP_HYSTERESIS_C)
     {
       digitalWrite(RELAY_TOGGLE_PIN, HIGH);
-      relayState = RELAY_ON;
+      relayState = RELAY_DELAY_ON;
     }
     break;
   case RELAY_ON:
-    if (tempCurrent > TEMP_MAX)
+    if (tempCurrent > TEMP_MAX_C + TEMP_HYSTERESIS_C)
     {
       digitalWrite(RELAY_TOGGLE_PIN, LOW);
+      relayState = RELAY_DELAY_OFF;
+    }
+    break;
+  case RELAY_DELAY_OFF:
+    if (millis() - startTime >= LONG_TIME_MS)
+    {
       relayState = RELAY_OFF;
+    }
+    break;
+  case RELAY_DELAY_ON:
+    if (millis() - startTime >= LONG_TIME_MS)
+    {
+      relayState = RELAY_ON;
     }
     break;
   }
 }
 
-
 void checkManualModeSwitch()
 {
-  if (digitalReadFast(MANUAL_MODE_PIN))
+  if (digitalRead(MANUAL_MODE_PIN))
   {
-    manualMode = true;
     digitalWrite(LED_BUILTIN, HIGH);
+    manualMode = true;
+    relayState = RELAY_ON;
   }
   else
   {
-    manualMode = false;
     digitalWrite(LED_BUILTIN, LOW);
+    manualMode = false;
   }
 }
 
 float readTemperature()
 {
+  static OneWire oneWire(ONE_WIRE_BUS);
+  static DallasTemperature sensors(&oneWire);
   sensors.requestTemperatures();
   return sensors.getTempCByIndex(0);
 }
 
 void toggleRelay()
 {
-  if (relayStateON)
+  if (relayState == RELAY_ON)
   {
     digitalWrite(RELAY_TOGGLE_PIN, HIGH);
   }
@@ -106,46 +120,34 @@ void toggleRelay()
   }
 
   // If the last relay state was different, delay to protect the pump
-  if (relayStateLAST != relayStateON)
+  static RelayState lastRelayState = RELAY_OFF;
+  if (relayState != lastRelayState)
   {
-    delay(LONG_TIME);
+    delay(LONG_TIME_MS);
   }
 
   // Save the current relay state
-  relayStateLAST = relayStateON;
+  lastRelayState = relayState;
 }
 
 void waitShortTime()
 {
-  delay(SHORT_TIME);
+  delay(SHORT_TIME_MS);
 }
 
 void goToSleep()
 {
-  for (int i = 0; i < SLEEP_FOR_SECONDS; i++)
-  {
-    LowPower.powerDown(SLEEP_1S, ADC_OFF, BOD_OFF);
-  }
+  LowPower.powerDown(SLEEP_8S, ADC_OFF, BOD_OFF);
 }
 
-
-
-void setup(void)
+void setup()
 {
-  // switchOFF inbuild LED
-  pinMode(LED_BUILTIN, OUTPUT);
-  digitalWrite(LED_BUILTIN, LOW);
-  // set control pins
-  // pinMode(ONE_WIRE_BUS, INPUT_PULLUP);
-  pinMode(MANUAL_MODE_PIN, INPUT);
-  pinMode(RELAY_TOGGLE_PIN, OUTPUT);
-
-  // Start up the library
-  sensors.begin(); // IC Default 9 bit. If you have troubles consider upping it 12. Ups the delay giving the IC more time to process the temperature measurement
+  setPinModes();
 }
 
-void loop(void)
+void loop()
 {
+
   // Check for manual mode switch on
   checkManualModeSwitch();
 
@@ -153,7 +155,7 @@ void loop(void)
   if (!manualMode)
   {
     float tempCurrent = readTemperature();
-    handleRelayState(tempCurrent);
+    handleRelayState(tempCurrent, startTime); // Pass startTime to the function
     waitShortTime();
   }
   else
