@@ -14,6 +14,7 @@
 // OneWire stuff
 #include <OneWire.h>
 #include <DallasTemperature.h>
+#include <digitalWriteFast.h>
 
 // Data wire is plugged into pin 2 on the Arduino
 const int ONE_WIRE_BUS = 2;
@@ -72,6 +73,63 @@ void handleRelayState(float tempCurrent)
   }
 }
 
+
+void checkManualModeSwitch()
+{
+  if (digitalReadFast(MANUAL_MODE_PIN))
+  {
+    manualMode = true;
+    digitalWrite(LED_BUILTIN, HIGH);
+  }
+  else
+  {
+    manualMode = false;
+    digitalWrite(LED_BUILTIN, LOW);
+  }
+}
+
+float readTemperature()
+{
+  sensors.requestTemperatures();
+  return sensors.getTempCByIndex(0);
+}
+
+void toggleRelay()
+{
+  if (relayStateON)
+  {
+    digitalWrite(RELAY_TOGGLE_PIN, HIGH);
+  }
+  else
+  {
+    digitalWrite(RELAY_TOGGLE_PIN, LOW);
+  }
+
+  // If the last relay state was different, delay to protect the pump
+  if (relayStateLAST != relayStateON)
+  {
+    delay(LONG_TIME);
+  }
+
+  // Save the current relay state
+  relayStateLAST = relayStateON;
+}
+
+void waitShortTime()
+{
+  delay(SHORT_TIME);
+}
+
+void goToSleep()
+{
+  for (int i = 0; i < SLEEP_FOR_SECONDS; i++)
+  {
+    LowPower.powerDown(SLEEP_1S, ADC_OFF, BOD_OFF);
+  }
+}
+
+
+
 void setup(void)
 {
   // switchOFF inbuild LED
@@ -88,106 +146,27 @@ void setup(void)
 
 void loop(void)
 {
-  ///************************************
-  // CHECK FOR MANUAL MODE SWITCH ON
-  // check again if manual mode switch is switched ON
-  if (digitalReadFast(MANUAL_MODE_PIN))
-  {
-    // Serial.println("MANUAL MODE ON"); // ONLY FOR DEBUG DEV
-    manualMode = true;
-    digitalWrite(LED_BUILTIN, HIGH);
-  }
-  else
-  {
-    // // Serial.println("MANUAL MODE OFF"); // ONLY FOR DEBUG DEV
-    manualMode = false;
-    digitalWrite(LED_BUILTIN, LOW);
-  }
-  ///************************************
-  ///************************************
+  // Check for manual mode switch on
+  checkManualModeSwitch();
 
-  ///************************************
-  // TEMPERATURE CONTROL STUFF
-  // read Temperatur and control relay ONLY when NOT in manual mode
-  // (i.e. manual mode switch, switched on - relayStateON==TRUE)
-  if (not manualMode)
+  // Temperature control stuff
+  if (!manualMode)
   {
-    // read sensor1
-    sensors.requestTemperatures(); // Send the command to get temperatures
-    tempCurrent = sensors.getTempCByIndex(0);
+    float tempCurrent = readTemperature();
     handleRelayState(tempCurrent);
-    // DEBUG
-    // Serial.println(tempCurrent);
-    // so we check each SHORT_TIME ms for new temp, so its SHORT_TIME*TEMP_CHECK_COUNT==6x1200==7200
-    while (millis() - startTime < SHORT_TIME)
-    {
-      // Do nothing
-    }
+    waitShortTime();
   }
   else
   {
     relayStateON = true;
   }
-  ///************************************
-  ///************************************
 
-  ///************************************
-  // RELAY control stuff
-  // switch relay to pump ON/OFF
-  if (relayStateON)
-  {
-    digitalWrite(RELAY_TOGGLE_PIN, HIGH); // ON
-    // Serial.println("RELAY_TOGGLE_PIN HIGH"); // ONLY FOR DEBUG DEV
-  }
-  else
-  {
-    digitalWrite(RELAY_TOGGLE_PIN, LOW); // OFF
-    // Serial.println("RELAY_TOGGLE_PIN LOW"); // ONLY FOR DEBUG DEV
-  }
-  // if laste state different, delay to protect pump
-  // especially at bootup for RELAY HIGH
-  if (relayStateLAST != relayStateON)
-  {
-    // wait for pump to bootup..
-    delay(LONG_TIME);
-  }
-  // save last relayStateON state..
-  relayStateLAST = relayStateON;
-  ///************************************
-  ///************************************
+  // Relay control stuff
+  toggleRelay();
 
-  ///************************************
-  // goto sleep/idle if not manual mode
-  // if ((not relayStateON) and (not manualMode))
-  if (not manualMode)
+  // Go to sleep/idle if not in manual mode and the relay is off
+  if (!manualMode && !relayStateON)
   {
-    // Serial.println("GOTOSLEEP"); // ONLY FOR DEBUG DEV
-    // FOR DEBUG ONLY
-    while (millis() - startTime < SHORT_TIME * .5)
-    {
-      // Do nothing
-    }
-    // sleepNow();                  // TODO: make sleep stuff
-    // this lowpower idles for 8sec, presumably using watchdog, cuz it max 8sec only..:(
-    // but we run it SLEEP_FOR_SECONDS times, to get what i want.. 1x20 + delayoverhead == 22
-    for (int index = 0; index < SLEEP_FOR_SECONDS; index++)
-    {
-      LowPower.idle(SLEEP_1S, ADC_OFF, TIMER2_OFF, TIMER1_OFF, TIMER0_OFF, SPI_OFF, USART0_OFF, TWI_OFF);
-    }
-    // give it some sec to wakeupo
-    while (millis() - startTime < SHORT_TIME * .5)
-    {
-      // Do nothing
-    }
-
-  }
-  ///************************************
-  ///************************************
-  // KEEP OR NOT??
-  while (millis() - startTime < SHORT_TIME)
-  {
-    // Do nothing
+    goToSleep();
   }
 }
-
-// // FIN
