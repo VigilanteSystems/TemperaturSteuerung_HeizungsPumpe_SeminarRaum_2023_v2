@@ -16,42 +16,60 @@
 #include <DallasTemperature.h>
 
 // Data wire is plugged into pin 2 on the Arduino
-#define ONE_WIRE_BUS 2
+const int ONE_WIRE_BUS = 2;
 // state toggle pins
-#define MANUAL_MODE_PIN 3
-#define RELAY_TOGGLE_PIN 6
+const int MANUAL_MODE_PIN = 3;
+const int RELAY_TOGGLE_PIN = 6;
 // value defines, maybe put seperately and include that file
-#define TEMP_CHECK_COUNT 5
-#define SHORT_TIME 1200
-#define LONG_TIME (SHORT_TIME * TEMP_CHECK_COUNT)
+const int TEMP_CHECK_COUNT = 3;
+const int SHORT_TIME = 1200;
+const int LONG_TIME = (SHORT_TIME * TEMP_CHECK_COUNT);
 // temp controls
-#define TEMP_MIN 18        // 18.0
-#define TEMP_MAX 18.5      // 18.5
-#define TEMP_HYSTERESE 0.1 // 18.6 17.9
+const float TEMP_MIN = 18;        // 18.0
+const float TEMP_MAX = 18.5;      // 18.5
+const float TEMP_HYSTERESE = 0.1; // 18.6 17.9
 // we repeat 1s sleep idle just x times to get sleep like below
-#define SLEEP_FOR_SECONDS 20
-
-// control vars maybe use next two in a dynamic tempreading scenario,thendefines are not useful
-// volatile float tempMin = 26.5;
-// volatile float tempMax = 27.5;
+const int SLEEP_FOR_SECONDS = 20;
 volatile float tempCurrent = 0.0;
+
 // is manual Mode is switched on
 volatile bool manualMode = false;
 volatile bool relayStateON = false;
 volatile bool relayStateLAST = relayStateON;
+unsigned long startTime = millis();
 
 // Setup a oneWire instance to communicate with any OneWire devices (not just Maxim/Dallas temperature ICs)
 OneWire oneWire(ONE_WIRE_BUS);
 // Pass our oneWire reference to Dallas Temperature.
 DallasTemperature sensors(&oneWire);
 
-// get average float from floatArray
-float averageFloatArray(float *array, int len) // assuming array is int.
+enum RelayState
 {
-  long sum = 0L; // sum will be larger than an item, long for safety.
-  for (int i = 0; i < len; i++)
-    sum += array[i];
-  return ((float)sum) / len; // average will be fractional, so float may be appropriate.
+  RELAY_OFF,
+  RELAY_ON
+};
+
+RelayState relayState = RELAY_OFF;
+
+void handleRelayState(float tempCurrent)
+{
+  switch (relayState)
+  {
+  case RELAY_OFF:
+    if (tempCurrent < TEMP_MIN)
+    {
+      digitalWrite(RELAY_TOGGLE_PIN, HIGH);
+      relayState = RELAY_ON;
+    }
+    break;
+  case RELAY_ON:
+    if (tempCurrent > TEMP_MAX)
+    {
+      digitalWrite(RELAY_TOGGLE_PIN, LOW);
+      relayState = RELAY_OFF;
+    }
+    break;
+  }
 }
 
 void setup(void)
@@ -66,30 +84,14 @@ void setup(void)
 
   // Start up the library
   sensors.begin(); // IC Default 9 bit. If you have troubles consider upping it 12. Ups the delay giving the IC more time to process the temperature measurement
-
-  // start serial port
-  // Serial.begin(9600);
-  // Serial.println("Dallas Temperature IC Control Library Demo");
 }
 
 void loop(void)
 {
   ///************************************
-  // DEBUG STUFF
-  // // call sensors.requestTemperatures() to issue a global temperature
-  // // request to all devices on the bus
-  // // Serial.print("Requesting temperatures... ");
-  // sensors.requestTemperatures(); // Send the command to get temperatures
-  // // Serial.println("DONE");
-  // // Serial.print("Temperature for Device 1 is: ");
-  // // Serial.println(sensors.getTempCByIndex(0)); // Why "byIndex"? You can have more than one IC on the same bus. 0 refers to the first IC on the wire
-  ///************************************
-  ///************************************
-
-  ///************************************
   // CHECK FOR MANUAL MODE SWITCH ON
   // check again if manual mode switch is switched ON
-  if (digitalRead(MANUAL_MODE_PIN))
+  if (digitalReadFast(MANUAL_MODE_PIN))
   {
     // Serial.println("MANUAL MODE ON"); // ONLY FOR DEBUG DEV
     manualMode = true;
@@ -110,37 +112,16 @@ void loop(void)
   // (i.e. manual mode switch, switched on - relayStateON==TRUE)
   if (not manualMode)
   {
-    // always a fresh floatStoreArray for each round
-    float tempCheckStore[TEMP_CHECK_COUNT] = {};
-    // read sensor X times and take mean for more precise value
-    for (int index = 0; index < TEMP_CHECK_COUNT; index++)
-    {
-      // read sensor1
-      sensors.requestTemperatures(); // Send the command to get temperatures
-      tempCurrent = sensors.getTempCByIndex(0);
-      tempCheckStore[index] = tempCurrent;
-      // DEBUG
-      // Serial.println(tempCurrent);
-      // so we check each SHORT_TIME ms for new temp, so its SHORT_TIME*TEMP_CHECK_COUNT==6x1200==7200
-      delay(SHORT_TIME);
-    }
-    // take means of just read temperatures
-    tempCurrent = averageFloatArray(tempCheckStore, TEMP_CHECK_COUNT);
-
+    // read sensor1
+    sensors.requestTemperatures(); // Send the command to get temperatures
+    tempCurrent = sensors.getTempCByIndex(0);
+    handleRelayState(tempCurrent);
     // DEBUG
-    // Serial.print("tempCurrent: "); // ONLY FOR DEBUG DEV
-    // Serial.println(tempCurrent);   // ONLY FOR DEBUG DEV
-
-    // check if temps over or under with TEMP_HYSTERESE
-    // var to switch relay to pump OFF
-    if (tempCurrent > TEMP_MAX + TEMP_HYSTERESE)
+    // Serial.println(tempCurrent);
+    // so we check each SHORT_TIME ms for new temp, so its SHORT_TIME*TEMP_CHECK_COUNT==6x1200==7200
+    while (millis() - startTime < SHORT_TIME)
     {
-      relayStateON = false;
-    }
-    // var to switch relay to pump relays ON
-    else if (tempCurrent < TEMP_MIN - TEMP_HYSTERESE)
-    {
-      relayStateON = true;
+      // Do nothing
     }
   }
   else
@@ -181,7 +162,11 @@ void loop(void)
   if (not manualMode)
   {
     // Serial.println("GOTOSLEEP"); // ONLY FOR DEBUG DEV
-    delay(SHORT_TIME * .5); // FOR DEBUG ONLY
+    // FOR DEBUG ONLY
+    while (millis() - startTime < SHORT_TIME * .5)
+    {
+      // Do nothing
+    }
     // sleepNow();                  // TODO: make sleep stuff
     // this lowpower idles for 8sec, presumably using watchdog, cuz it max 8sec only..:(
     // but we run it SLEEP_FOR_SECONDS times, to get what i want.. 1x20 + delayoverhead == 22
@@ -189,15 +174,20 @@ void loop(void)
     {
       LowPower.idle(SLEEP_1S, ADC_OFF, TIMER2_OFF, TIMER1_OFF, TIMER0_OFF, SPI_OFF, USART0_OFF, TWI_OFF);
     }
-    delay(SHORT_TIME * .5); // give it some sec to wakeupo
+    // give it some sec to wakeupo
+    while (millis() - startTime < SHORT_TIME * .5)
+    {
+      // Do nothing
+    }
 
-    // Serial.print("WAKEUP AFTER: "); // ONLY FOR DEBUG DEV
-    // Serial.print(SLEEP_FOR_SECONDS); // ONLY FOR DEBUG DEV
-    // // Serial.println(" seconds sleep"); // ONLY FOR DEBUG DEV
   }
   ///************************************
   ///************************************
-  delay(SHORT_TIME); // KEEP OR NOT??
+  // KEEP OR NOT??
+  while (millis() - startTime < SHORT_TIME)
+  {
+    // Do nothing
+  }
 }
 
 // // FIN
