@@ -21,7 +21,7 @@ const int ONE_WIRE_BUS = 2;
 // state toggle pins
 const int MANUAL_MODE_PIN = 3;
 const int RELAY_TOGGLE_PIN = 6;
-// value defines
+// values defined
 const int TEMP_CHECK_COUNT = 3;
 const int SHORT_TIME_MS = 1200;
 const int LONG_TIME_MS = (SHORT_TIME_MS * TEMP_CHECK_COUNT);
@@ -31,7 +31,8 @@ const float TEMP_MAX_C = 18.5;
 const float TEMP_HYSTERESIS_C = 0.1;
 // sleep mode
 const int SLEEP_DURATION_S = 20;
-static unsigned long startTime = millis(); // Define and initialize startTime variable
+// Define and initialize startTime variable
+static unsigned long startTime = millis();
 
 enum RelayState
 {
@@ -41,6 +42,7 @@ enum RelayState
   RELAY_DELAY_ON
 };
 
+RelayState lastRelayState = RELAY_OFF;
 RelayState relayState = RELAY_OFF;
 bool manualMode = false;
 
@@ -107,6 +109,15 @@ float readTemperature()
   return sensors.getTempCByIndex(0);
 }
 
+void waitShortTime()
+{
+  unsigned long startMillis = millis();
+  while (millis() - startMillis < SHORT_TIME_MS)
+  {
+    // do nothing, just wait
+  }
+}
+
 void toggleRelay()
 {
   if (relayState == RELAY_ON)
@@ -119,24 +130,17 @@ void toggleRelay()
   }
 
   // If the last relay state was different, delay to protect the pump
-  static RelayState lastRelayState = RELAY_OFF;
   if (relayState != lastRelayState)
   {
-    delay(LONG_TIME_MS);
+    waitShortTime();
   }
-
   // Save the current relay state
   lastRelayState = relayState;
 }
 
-void waitShortTime()
-{
-  delay(SHORT_TIME_MS);
-}
-
 void goToSleep(int sleepDuration)
 {
-  for (int i=0; i<sleepDuration; i++)
+  for (int i = 0; i < sleepDuration; i++)
   {
     LowPower.idle(SLEEP_1S, ADC_OFF, TIMER2_OFF, TIMER1_OFF, TIMER0_OFF, SPI_OFF, USART0_OFF, TWI_OFF);
   }
@@ -157,7 +161,7 @@ void loop()
   if (!manualMode)
   {
     float tempCurrent = readTemperature();
-    handleRelayState(tempCurrent, startTime); // Pass startTime to the function
+    handleRelayState(tempCurrent, millis());
     waitShortTime();
   }
   else
