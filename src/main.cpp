@@ -64,14 +64,12 @@ void handleRelayState(float tempCurrent)
   case RELAY_OFF:
     if (tempCurrent < TEMP_MIN_C - TEMP_HYSTERESIS_C)
     {
-      digitalWriteFast(RELAY_TOGGLE_PIN, HIGH);
       relayState = RELAY_ON;
     }
     break;
   case RELAY_ON:
     if (tempCurrent > TEMP_MAX_C + TEMP_HYSTERESIS_C)
     {
-      digitalWriteFast(RELAY_TOGGLE_PIN, LOW);
       relayState = RELAY_OFF;
     }
     break;
@@ -84,7 +82,6 @@ void checkManualModeSwitch()
   if (digitalReadFast(MANUAL_MODE_PIN))
   {
     manualMode = true;
-    relayState = RELAY_ON;
     digitalWriteFast(LED_BUILTIN, HIGH);
   }
   else
