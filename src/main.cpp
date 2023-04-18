@@ -20,29 +20,25 @@
 #include <digitalWriteFast.h>
 
 // Data wire is plugged into pin 2 on the Arduino
-const int ONE_WIRE_BUS_PIN = 2;
+static const int ONE_WIRE_BUS_PIN = 2;
 // state toggle pins
-const int MANUAL_MODE_PIN = 3;
-const int RELAY_TOGGLE_PIN = 6;
+static const int MANUAL_MODE_PIN = 3;
+static const int RELAY_TOGGLE_PIN = 6;
 // values defined
-const int SHORT_TIME_MS = 500;
-const int LONG_TIME_MS = 5000;
+static const int SHORT_TIME_MS = 500;
+static const int LONG_TIME_MS = 8888;
 // temp controls
-const float TEMP_MIN_C = 18.0;
-const float TEMP_MAX_C = 18.5;
-const float TEMP_HYSTERESIS_C = 0.1;
-// sleep mode
-const int SLEEP_DURATION_S = 20;
-// Define and initialize startTime variable
-static unsigned long startTime = millis();
+static const float TEMP_MIN_C = 18.0;
+static const float TEMP_MAX_C = 18.5;
+static const float TEMP_HYSTERESIS_C = 0.2;
+// sleep mode i.e. check temp or manual mode every 5 minutes
+long SLEEP_DURATION_MS = (5 * 60000L); // 5 minutes from 5*(60*1000)ms
 
 // Define relay states statemachine
 enum RelayState
 {
   RELAY_OFF,
-  RELAY_ON,
-  RELAY_DELAY_OFF,
-  RELAY_DELAY_ON
+  RELAY_ON
 };
 RelayState lastRelayState = RELAY_OFF;
 RelayState relayState = RELAY_OFF;
@@ -51,16 +47,16 @@ bool manualMode = false;
 // set pin modes
 void setPinModes()
 {
-  pinMode(LED_BUILTIN, OUTPUT);
   pinMode(ONE_WIRE_BUS_PIN, INPUT);
   pinMode(MANUAL_MODE_PIN, INPUT);
   pinMode(RELAY_TOGGLE_PIN, OUTPUT);
+  pinMode(LED_BUILTIN, OUTPUT);
   digitalWriteFast(LED_BUILTIN, LOW);
   digitalWriteFast(RELAY_TOGGLE_PIN, LOW);
 }
 
 // handle relay state
-void handleRelayState(float tempCurrent, unsigned long startTime)
+void handleRelayState(float tempCurrent)
 {
   switch (relayState)
   {
@@ -68,26 +64,14 @@ void handleRelayState(float tempCurrent, unsigned long startTime)
     if (tempCurrent < TEMP_MIN_C - TEMP_HYSTERESIS_C)
     {
       digitalWriteFast(RELAY_TOGGLE_PIN, HIGH);
-      relayState = RELAY_DELAY_ON;
+      relayState = RELAY_ON;
     }
     break;
   case RELAY_ON:
     if (tempCurrent > TEMP_MAX_C + TEMP_HYSTERESIS_C)
     {
       digitalWriteFast(RELAY_TOGGLE_PIN, LOW);
-      relayState = RELAY_DELAY_OFF;
-    }
-    break;
-  case RELAY_DELAY_OFF:
-    if (millis() - startTime >= LONG_TIME_MS)
-    {
       relayState = RELAY_OFF;
-    }
-    break;
-  case RELAY_DELAY_ON:
-    if (millis() - startTime >= LONG_TIME_MS)
-    {
-      relayState = RELAY_ON;
     }
     break;
   }
@@ -126,6 +110,14 @@ void waitShortTime()
     // do nothing, just wait SHORT_TIME_MS
   }
 }
+void waitLongTime()
+{
+  unsigned long startMillis = millis();
+  while (millis() - startMillis < LONG_TIME_MS)
+  {
+    // do nothing, just wait LONG_TIME_MS
+  }
+}
 
 // Toggle relay
 void toggleRelay()
@@ -141,7 +133,7 @@ void toggleRelay()
   // If the last relay state was different, delay to protect the pump
   if (relayState != lastRelayState)
   {
-    waitShortTime();
+    waitLongTime();
   }
   // Save the current relay state
   lastRelayState = relayState;
@@ -155,9 +147,8 @@ void goToSleep(int sleepDuration)
   //  makes the device sleep for 1 second * sleepDuration
   for (int i = 0; i < sleepDuration; i++)
   {
-    // LowPower.powerDown makes the device sleep seems more power saving then next one, but keeps digital pins high
-    LowPower.powerDown(SLEEP_1S, ADC_OFF, BOD_OFF);
-    // LowPower.idle(SLEEP_1S, ADC_OFF, TIMER2_OFF, TIMER1_OFF, TIMER0_OFF, SPI_OFF, USART0_OFF, TWI_OFF);
+    // makes the device sleep but keeps digital pins high
+    LowPower.idle(SLEEP_1S, ADC_OFF, TIMER2_OFF, TIMER1_OFF, TIMER0_OFF, SPI_OFF, USART0_OFF, TWI_OFF);
   }
   // some time to get up
   waitShortTime();
@@ -175,14 +166,13 @@ void loop()
 {
   // Check for manual mode switch on
   checkManualModeSwitch();
-
   // Temperature control stuff
   if (!manualMode)
   {
     // Read temperature from DallasTemperature sensor
     float tempCurrent = readTemperature();
     // relay state machine
-    handleRelayState(tempCurrent, millis());
+    handleRelayState(tempCurrent);
   }
   else
   {
@@ -193,5 +183,5 @@ void loop()
   toggleRelay();
 
   // Go to sleep/idle
-  goToSleep(SLEEP_DURATION_S);
+  goToSleep(SLEEP_DURATION_MS);
 }
