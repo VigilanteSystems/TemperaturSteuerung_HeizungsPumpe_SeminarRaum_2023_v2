@@ -1,5 +1,5 @@
 {
-    "cmake.sourceDirectory": "${workspaceFolder}/.pio/libdeps/pro16MHzatmega168/OneWireNg",
+    "cmake.sourceDirectory": "${workspaceFolder}/.pio/libdeps/pro16MHzatmega328/DallasTemperature@src-7a548e7148cadb4df4341baf28aeb2ca",
     "files.associations": {
         "*.cppold": "cpp"
     }
