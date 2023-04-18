@@ -152,8 +152,9 @@ void goToSleep(int sleepDuration)
   //  makes the device sleep for 1 second * sleepDuration
   for (int i = 0; i < sleepDuration; i++)
   {
-    // makes the device sleep but keeps digital pins high, unlinke LowPower.sleep()
-    LowPower.idle(SLEEP_1S, ADC_OFF, TIMER2_OFF, TIMER1_OFF, TIMER0_OFF, SPI_OFF, USART0_OFF, TWI_OFF);
+    // makes the device sleep but keeps digital pins high, unlinke LowPower.sleep() but powerStandby() is better
+    // LowPower.idle(SLEEP_1S, ADC_OFF, TIMER2_OFF, TIMER1_OFF, TIMER0_OFF, SPI_OFF, USART0_OFF, TWI_OFF);
+    LowPower.powerStandby(SLEEP_1S, ADC_OFF, BOD_OFF);
   }
   // some time to get up
   waitShortTime();
@@ -172,12 +173,11 @@ void loop()
   // Check for manual mode switch on
   checkManualModeSwitch();
 
-  // Temperature control stuff or manual mode 
+  // Temperature control stuff or manual mode
   if (!manualMode)
   {
     // Read temperature from DallasTemperature sensor
     float tempCurrent = readTemperature();
-    tempCurrent = 18.9; // for testing
     // relay state machine
     handleRelayState(tempCurrent);
   }
