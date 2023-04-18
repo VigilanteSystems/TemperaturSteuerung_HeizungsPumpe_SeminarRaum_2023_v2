@@ -32,7 +32,9 @@ static const float TEMP_MIN_C = 18.0;
 static const float TEMP_MAX_C = 18.5;
 static const float TEMP_HYSTERESIS_C = 0.2;
 // sleep mode i.e. check temp or manual mode every 5 minutes
-long SLEEP_DURATION_MS = (5 * 60000L); // 5 minutes from 5*(60*1000)ms
+static const int SLEEP_DURATION_S = 300; // 5 minutes from 5*60sec==300sec
+// manual mode booly
+volatile bool manualMode = false;
 
 // Define relay states statemachine
 enum RelayState
@@ -42,7 +44,6 @@ enum RelayState
 };
 RelayState lastRelayState = RELAY_OFF;
 RelayState relayState = RELAY_OFF;
-bool manualMode = false;
 
 // set pin modes
 void setPinModes()
@@ -102,6 +103,7 @@ float readTemperature()
   return sensors.getTempCByIndex(0);
 }
 
+// do nothing, just wait SHORT_TIME_MS
 void waitShortTime()
 {
   unsigned long startMillis = millis();
@@ -110,6 +112,8 @@ void waitShortTime()
     // do nothing, just wait SHORT_TIME_MS
   }
 }
+
+// do nothing, just wait LONG_TIME_MS
 void waitLongTime()
 {
   unsigned long startMillis = millis();
@@ -122,6 +126,12 @@ void waitLongTime()
 // Toggle relay
 void toggleRelay()
 {
+  // If the last relay state was different, delay to protect the pump
+  if (relayState != lastRelayState)
+  {
+    waitLongTime();
+  }
+  // Toggle relay
   if (relayState == RELAY_ON)
   {
     digitalWriteFast(RELAY_TOGGLE_PIN, HIGH);
@@ -130,16 +140,11 @@ void toggleRelay()
   {
     digitalWriteFast(RELAY_TOGGLE_PIN, LOW);
   }
-  // If the last relay state was different, delay to protect the pump
-  if (relayState != lastRelayState)
-  {
-    waitLongTime();
-  }
   // Save the current relay state
   lastRelayState = relayState;
 }
 
-// sleep/powerdown for x sleepDuration seconds + 1 second from 2*waitShortTime()
+// sleep/powerdown for x sleepDuration seconds + about 1 second from 2*waitShortTime()
 void goToSleep(int sleepDuration)
 {
   // some time to get to bed
@@ -147,7 +152,7 @@ void goToSleep(int sleepDuration)
   //  makes the device sleep for 1 second * sleepDuration
   for (int i = 0; i < sleepDuration; i++)
   {
-    // makes the device sleep but keeps digital pins high
+    // makes the device sleep but keeps digital pins high, unlinke LowPower.sleep()
     LowPower.idle(SLEEP_1S, ADC_OFF, TIMER2_OFF, TIMER1_OFF, TIMER0_OFF, SPI_OFF, USART0_OFF, TWI_OFF);
   }
   // some time to get up
@@ -166,16 +171,19 @@ void loop()
 {
   // Check for manual mode switch on
   checkManualModeSwitch();
-  // Temperature control stuff
+
+  // Temperature control stuff or manual mode 
   if (!manualMode)
   {
     // Read temperature from DallasTemperature sensor
     float tempCurrent = readTemperature();
+    tempCurrent = 18.9; // for testing
     // relay state machine
     handleRelayState(tempCurrent);
   }
   else
   {
+    // Manual mode
     relayState = RELAY_ON;
   }
 
@@ -183,5 +191,6 @@ void loop()
   toggleRelay();
 
   // Go to sleep/idle
-  goToSleep(SLEEP_DURATION_MS);
+  goToSleep(SLEEP_DURATION_S);
 }
+// FIN
