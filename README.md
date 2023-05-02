@@ -24,7 +24,7 @@ PS:
 schematics or so are upcoming, still live-testing, looks good so far..
 
 ChatGPT README.md version2:
-# Temperature Control for Heating Pump
+## Temperature Control for Heating Pump
 
 This is a temperature control system for a heating pump, which turns the pump on when the temperature is below a certain value and off when it is above another value, with a hysteresis to avoid frequent toggling. The system can also be put into manual mode where the pump is always on. The system is optimized for low power consumption and uses the LowPower library to put the device to sleep when the pump is off and there is no user input.
 
