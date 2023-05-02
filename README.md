@@ -23,7 +23,8 @@ VigilanteSystems - April 2023
 PS:
 schematics or so are upcoming, still live-testing, looks good so far..
 
-ChatGPT README.md version2:
+##
+### ChatGPT README.md version2:
 ## Temperature Control for Heating Pump
 
 This is a temperature control system for a heating pump, which turns the pump on when the temperature is below a certain value and off when it is above another value, with a hysteresis to avoid frequent toggling. The system can also be put into manual mode where the pump is always on. The system is optimized for low power consumption and uses the LowPower library to put the device to sleep when the pump is off and there is no user input.
@@ -80,10 +81,11 @@ Contributions are welcome! Please submit a pull request or open an issue.
 
 ## License
 
-This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
+This project is licensed under the CC0 1.0 Universal License - see the [LICENSE](LICENSE) file for details.
 
 
-BING KI README.md VERSION1:
+##
+### BING KI README.md VERSION1:
 This code controls a heating pump based on temperature readings from a DallasTemperature sensor. The pump is turned on when the temperature is below TEMP_MIN_C and turned off when it is above TEMP_MAX_C. A hysteresis of TEMP_HYSTERESIS_C is used to avoid frequent toggling of the pump. The code also supports a manual mode where the pump is always on. The code is optimized for low power consumption by using the LowPower library to put the device to sleep when the pump is off and there is no user input.
 
 Here's a brief explanation of the important parts of the code:
