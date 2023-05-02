@@ -17,13 +17,13 @@
 #include <LowPower.h>
 #include <OneWire.h>
 #include <DallasTemperature.h>
-#include <digitalWriteFast.h>
 
-// Data wire is plugged into pin 2 on the Arduino
-static const int ONE_WIRE_BUS_PIN = 2;
-// state toggle pins
+// manual mode switch port pin 3 to be able to use interrupt there
 static const int MANUAL_MODE_PIN = 3;
-static const int RELAY_TOGGLE_PIN = 6;
+// Data wire is plugged into pin 6 on the Arduino
+static const int ONE_WIRE_BUS_PIN = 6;
+// relay switch port pin
+static const int RELAY_TOGGLE_PIN = 9;
 // values defined
 static const int SHORT_TIME_MS = 500;
 static const int LONG_TIME_MS = 8888;
@@ -33,9 +33,14 @@ static const float TEMP_MAX_C = 18.5;
 static const float TEMP_HYSTERESIS_C = 0.2;
 // sleep mode i.e. check temp or manual mode every 5 minutes
 static const int SLEEP_DURATION_S = 300; // 5 minutes from 5*60sec==300sec
-// manual mode booly
-volatile bool manualMode = false;
 
+//manual modes from booly to enum, define manual mode states statemachine
+enum ManualModeState
+{
+  MANUAL_MODE_OFF,
+  MANUAL_MODE_ON
+};
+ManualModeState manualMode = MANUAL_MODE_OFF;
 // Define relay states statemachine
 enum RelayState
 {
@@ -51,9 +56,9 @@ void setPinModes()
   pinMode(ONE_WIRE_BUS_PIN, INPUT);
   pinMode(MANUAL_MODE_PIN, INPUT);
   pinMode(RELAY_TOGGLE_PIN, OUTPUT);
-  pinMode(LED_BUILTIN, OUTPUT);
-  digitalWriteFast(LED_BUILTIN, LOW);
-  digitalWriteFast(RELAY_TOGGLE_PIN, LOW);
+  // pinMode(LED_BUILTIN, OUTPUT);    // gone to save more power
+  // digitalWriteFast(LED_BUILTIN, LOW); // gone to save more power
+  digitalWrite(RELAY_TOGGLE_PIN, LOW);
 }
 
 // handle relay state
@@ -79,15 +84,15 @@ void handleRelayState(float tempCurrent)
 // check if manual mode switch is on
 void checkManualModeSwitch()
 {
-  if (digitalReadFast(MANUAL_MODE_PIN))
+  if (digitalRead(MANUAL_MODE_PIN))
   {
-    manualMode = true;
-    digitalWriteFast(LED_BUILTIN, HIGH);
+    manualMode = MANUAL_MODE_ON;
+    // digitalWriteFast(LED_BUILTIN, HIGH);   // gone to save more power
   }
   else
   {
-    manualMode = false;
-    digitalWriteFast(LED_BUILTIN, LOW);
+    manualMode = MANUAL_MODE_OFF;
+    // digitalWriteFast(LED_BUILTIN, LOW);    // gone to save more power
   }
 }
 
@@ -129,13 +134,13 @@ void toggleRelay()
     waitLongTime();
   }
   // Toggle relay
-  if (relayState == RELAY_ON)
+  if (relayState)
   {
-    digitalWriteFast(RELAY_TOGGLE_PIN, HIGH);
+    digitalWrite(RELAY_TOGGLE_PIN, HIGH);
   }
   else
   {
-    digitalWriteFast(RELAY_TOGGLE_PIN, LOW);
+    digitalWrite(RELAY_TOGGLE_PIN, LOW);
   }
   // Save the current relay state
   lastRelayState = relayState;
@@ -171,17 +176,17 @@ void loop()
   checkManualModeSwitch();
 
   // Temperature control stuff or manual mode
-  if (!manualMode)
+  if (manualMode)
+  {
+    // Manual mode
+    relayState = RELAY_ON;
+  }
+  else
   {
     // Read temperature from DallasTemperature sensor
     float tempCurrent = readTemperature();
     // relay state machine
     handleRelayState(tempCurrent);
-  }
-  else
-  {
-    // Manual mode
-    relayState = RELAY_ON;
   }
 
   // Relay control stuff
